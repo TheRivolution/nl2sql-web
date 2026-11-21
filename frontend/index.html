@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NL2SQL - Interroga il database in italiano</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f3f6fb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 48px 20px;
+    }
+
+    main {
+      width: min(100%, 820px);
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.7rem, 5vw, 2.4rem);
+      letter-spacing: -0.04em;
+    }
+
+    .intro {
+      margin: 0 0 28px;
+      color: #596579;
+    }
+
+    .panel {
+      padding: 24px;
+      border: 1px solid #dfe5ef;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 12px 32px rgb(23 32 51 / 6%);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 650;
+    }
+
+    textarea {
+      display: block;
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      padding: 12px 14px;
+      border: 1px solid #cbd4e2;
+      border-radius: 10px;
+      font: inherit;
+      line-height: 1.5;
+    }
+
+    textarea:focus-visible,
+    button:focus-visible {
+      outline: 3px solid #93b4ff;
+      outline-offset: 2px;
+    }
+
+    button {
+      margin-top: 14px;
+      padding: 10px 18px;
+      border: 0;
+      border-radius: 9px;
+      background: #2457d6;
+      color: #fff;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1948bd;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+
+    .status {
+      margin: 16px 0 0;
+    }
+
+    .status.error {
+      color: #b42318;
+    }
+
+    .status.success {
+      color: #167547;
+    }
+
+    .output {
+      margin-top: 24px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 0 0 22px;
+      padding: 16px;
+      border-radius: 10px;
+      background: #172033;
+      color: #eef4ff;
+      font: 0.92rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border: 1px solid #dfe5ef;
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e8edf4;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f7f9fc;
+      font-size: 0.9rem;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .empty-results {
+      color: #596579;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 28px 14px;
+      }
+
+      .panel {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>NL2SQL - Interroga il database in italiano</h1>
+    <p class="intro">Scrivi una domanda sul database Chinook e visualizza la query SQL generata e i risultati.</p>
+
+    <section class="panel" aria-label="Interrogazione del database">
+      <form id="query-form">
+        <label for="domanda">La tua domanda</label>
+        <textarea id="domanda" name="domanda" placeholder="Es. Quanti clienti ci sono in Italia?" required></textarea>
+        <button id="submit-button" type="submit">Invia</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <section id="output" class="output" aria-label="Risultato della query" hidden>
+        <h2>Query SQL generata</h2>
+        <pre><code id="sql-query"></code></pre>
+
+        <h2>Risultati</h2>
+        <p id="empty-results" class="empty-results" hidden>Nessun risultato trovato.</p>
+        <div class="table-wrapper">
+          <table id="results-table" hidden>
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#query-form");
+    const questionInput = document.querySelector("#domanda");
+    const submitButton = document.querySelector("#submit-button");
+    const statusMessage = document.querySelector("#status");
+    const output = document.querySelector("#output");
+    const sqlQuery = document.querySelector("#sql-query");
+    const resultsTable = document.querySelector("#results-table");
+    const emptyResults = document.querySelector("#empty-results");
+
+    function renderResults(results) {
+      const tableHead = resultsTable.querySelector("thead");
+      const tableBody = resultsTable.querySelector("tbody");
+      tableHead.replaceChildren();
+      tableBody.replaceChildren();
+
+      if (results.length === 0) {
+        resultsTable.hidden = true;
+        emptyResults.hidden = false;
+        return;
+      }
+
+      const columns = Object.keys(results[0]);
+      const headerRow = document.createElement("tr");
+      for (const column of columns) {
+        const header = document.createElement("th");
+        header.scope = "col";
+        header.textContent = column;
+        headerRow.append(header);
+      }
+      tableHead.append(headerRow);
+
+      for (const result of results) {
+        const row = document.createElement("tr");
+        for (const column of columns) {
+          const cell = document.createElement("td");
+          const value = result[column];
+          cell.textContent = value === null || value === undefined ? "" : String(value);
+          row.append(cell);
+        }
+        tableBody.append(row);
+      }
+
+      emptyResults.hidden = true;
+      resultsTable.hidden = false;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const domanda = questionInput.value.trim();
+
+      if (!domanda) {
+        statusMessage.textContent = "Inserisci una domanda prima di inviare.";
+        statusMessage.className = "status error";
+        return;
+      }
+
+      submitButton.disabled = true;
+      statusMessage.textContent = "Elaborazione della domanda...";
+      statusMessage.className = "status";
+      output.hidden = true;
+
+      try {
+        const response = await fetch("http://127.0.0.1:8000/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domanda })
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(typeof data.detail === "string" ? data.detail : `Errore HTTP ${response.status}`);
+        }
+        if (typeof data.query !== "string" || !Array.isArray(data.risultati)) {
+          throw new Error("La risposta del server non ha il formato previsto.");
+        }
+
+        sqlQuery.textContent = data.query;
+        renderResults(data.risultati);
+        output.hidden = false;
+        statusMessage.textContent = "Query eseguita correttamente.";
+        statusMessage.className = "status success";
+      } catch (error) {
+        statusMessage.textContent = error instanceof TypeError
+          ? "Impossibile raggiungere il backend. Verifica che sia avviato e che il browser possa collegarsi."
+          : `Errore: ${error.message}`;
+        statusMessage.className = "status error";
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
